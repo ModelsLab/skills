@@ -35,15 +35,15 @@ npx skills add modelslab/skills --list
 
 | Skill | Description | Use Cases |
 |-------|-------------|-----------|
-| 🎨 [**Image Generation**](skills/image-generation/SKILL.md)<br/>`modelslab-image-generation` | Generate high-quality AI images from text prompts or transform existing images. Access 10,000+ models including FLUX, Realtime, and Community models. | Product photos, marketing graphics, concept art, social media content |
-| 🎬 [**Video Generation**](skills/video-generation/SKILL.md)<br/>`modelslab-video-generation` | Generate videos from text descriptions or animate static images using AI video generation models like CogVideoX. | Product demos, social media videos, animations, visual storytelling |
-| 🎵 [**Audio Generation**](skills/audio-generation/SKILL.md)<br/>`modelslab-audio-generation` | Generate speech, music, sound effects, and more using AI audio synthesis with voice cloning. | Audiobooks, podcasts, voice assistants, game audio, music production |
-| ✂️ [**Image Editing**](skills/image-editing/SKILL.md)<br/>`modelslab-image-editing` | Professional AI-powered image editing tools for background removal, upscaling, and more. | E-commerce photos, real estate, social media, photo restoration |
-| 🎲 [**3D Generation**](skills/3d-generation/SKILL.md)<br/>`modelslab-3d-generation` | Generate 3D models from text descriptions or convert 2D images to 3D. | Game assets, product prototypes, 3D printing, AR/VR content |
-| 🎭 [**Deepfake & Face Swap**](skills/deepfake/SKILL.md)<br/>`modelslab-deepfake` | High-quality face swapping in images and videos using advanced AI. | Entertainment content, personalized videos, character variations |
-| 🏠 [**Interior Design**](skills/interior-design/SKILL.md)<br/>`modelslab-interior-design` | AI-powered interior design, room decoration, and space transformation. | Virtual staging, renovation planning, real estate, design mockups |
-| 🔔 [**Webhooks**](skills/webhooks/SKILL.md)<br/>`modelslab-webhooks` | Handle async operations efficiently with real-time webhook notifications. | Batch processing, background jobs, scalable applications |
-| 📦 [**SDK Usage**](skills/sdk-usage/SKILL.md)<br/>`modelslab-sdk-usage` | Official SDKs for easier integration with type safety (Python, TypeScript, PHP, Go, Dart). | Type safety, autocomplete, better error handling, cleaner code |
+| 🎨 [**Image Generation**](image-generation/SKILL.md)<br/>`modelslab-image-generation` | Generate high-quality AI images from text prompts or transform existing images. Access 10,000+ models including FLUX, Realtime, and Community models. | Product photos, marketing graphics, concept art, social media content |
+| 🎬 [**Video Generation**](video-generation/SKILL.md)<br/>`modelslab-video-generation` | Generate videos from text descriptions or animate static images using AI video generation models like CogVideoX. | Product demos, social media videos, animations, visual storytelling |
+| 🎵 [**Audio Generation**](audio-generation/SKILL.md)<br/>`modelslab-audio-generation` | Generate speech, music, sound effects, and more using AI audio synthesis with voice cloning. | Audiobooks, podcasts, voice assistants, game audio, music production |
+| ✂️ [**Image Editing**](image-editing/SKILL.md)<br/>`modelslab-image-editing` | Professional AI-powered image editing tools for background removal, upscaling, and more. | E-commerce photos, real estate, social media, photo restoration |
+| 🎲 [**3D Generation**](3d-generation/SKILL.md)<br/>`modelslab-3d-generation` | Generate 3D models from text descriptions or convert 2D images to 3D. | Game assets, product prototypes, 3D printing, AR/VR content |
+| 🎭 [**Deepfake & Face Swap**](deepfake/SKILL.md)<br/>`modelslab-deepfake` | High-quality face swapping in images and videos using advanced AI. | Entertainment content, personalized videos, character variations |
+| 🏠 [**Interior Design**](interior-design/SKILL.md)<br/>`modelslab-interior-design` | AI-powered interior design, room decoration, and space transformation. | Virtual staging, renovation planning, real estate, design mockups |
+| 🔔 [**Webhooks**](webhooks/SKILL.md)<br/>`modelslab-webhooks` | Handle async operations efficiently with real-time webhook notifications. | Batch processing, background jobs, scalable applications |
+| 📦 [**SDK Usage**](sdk-usage/SKILL.md)<br/>`modelslab-sdk-usage` | Official SDKs for easier integration with type safety (Python, TypeScript, PHP, Go, Dart). | Type safety, autocomplete, better error handling, cleaner code |
 
 ## Installation
 
