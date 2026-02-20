@@ -98,6 +98,59 @@ def logout_all(token):
     )
 ```
 
+### Verify Email (Headless)
+
+After signup, the user receives a `verification_code` via email. Verify without a browser:
+
+```python
+def verify_email(verification_code):
+    """Verify email with the code from the verification email.
+
+    Returns an access_token and api_key — no browser required.
+    """
+    response = requests.post(
+        "https://modelslab.com/api/agents/v1/auth/verify-email",
+        json={"verification_code": verification_code}
+    )
+    data = response.json()
+    if "error" in data:
+        raise Exception(data["error"])
+    return data["data"]
+
+# Usage — complete headless signup flow
+result = verify_email("the_code_from_email")
+token = result["access_token"]
+api_key = result["api_key"]
+print(f"Verified! Token: {token}, API Key: {api_key}")
+```
+
+### Refresh Token
+
+Rotate the current bearer token without re-authenticating:
+
+```python
+def refresh_token(token, token_expiry="1_month"):
+    """Refresh/rotate the current access token.
+
+    The old token is revoked and a new one is issued.
+
+    Args:
+        token_expiry: "1_week", "1_month" (default), "3_months", "never"
+    """
+    response = requests.post(
+        "https://modelslab.com/api/agents/v1/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"token_expiry": token_expiry}
+    )
+    data = response.json()
+    if "error" in data:
+        raise Exception(data["error"])
+    return data["data"]["access_token"]
+
+# Usage — rotate token before it expires
+new_token = refresh_token(old_token, token_expiry="1_month")
+```
+
 ### Password Reset
 
 ```python
@@ -450,6 +503,58 @@ agent.check_ready()
 # Now use agent.api_key with generation endpoints
 ```
 
+## Headless Agent Flow (No Browser Required)
+
+The complete flow for agents that need to sign up, verify, add payment, subscribe, and generate content without any browser interaction:
+
+```python
+import requests
+
+BASE = "https://modelslab.com/api/agents/v1"
+
+# 1. Sign up
+signup_resp = requests.post(f"{BASE}/auth/signup", json={
+    "email": "agent@example.com",
+    "password": "securepass123",
+    "name": "My Agent"
+})
+# -> User receives verification_code in email
+
+# 2. Verify email with code from email (no browser needed)
+verify_resp = requests.post(f"{BASE}/auth/verify-email", json={
+    "verification_code": "the_code_from_email"
+})
+token = verify_resp.json()["data"]["access_token"]
+api_key = verify_resp.json()["data"]["api_key"]
+headers = {"Authorization": f"Bearer {token}"}
+
+# 3. Create Stripe SetupIntent for headless card tokenization
+setup_resp = requests.post(f"{BASE}/billing/setup-intent", headers=headers)
+client_secret = setup_resp.json()["data"]["client_secret"]
+# -> Confirm with Stripe API directly (no Stripe Checkout redirect)
+
+# 4. Attach the payment method
+requests.post(f"{BASE}/billing/payment-methods", headers=headers, json={
+    "payment_method_id": "pm_...",
+    "make_default": True
+})
+
+# 5. Subscribe directly (no Stripe Checkout redirect)
+sub_resp = requests.post(f"{BASE}/subscriptions/direct", headers=headers, json={
+    "plan_id": 123,
+    "payment_method_id": "pm_..."
+})
+
+# 6. Generate content using existing APIs with the api_key from step 2
+gen_resp = requests.post("https://modelslab.com/api/v6/images/text2img", json={
+    "key": api_key,
+    "model_id": "flux-dev",
+    "prompt": "A sunset over mountains",
+    "width": 1024,
+    "height": 1024
+})
+```
+
 ## MCP Server Access
 
 These same capabilities are available via the Agent Control Plane MCP server:
@@ -465,6 +570,8 @@ See: https://docs.modelslab.com/mcp-web-api/agent-control-plane
 |--------|----------|-------------|
 | POST | `/auth/signup` | Create account |
 | POST | `/auth/login` | Get bearer token |
+| POST | `/auth/verify-email` | Verify email with code (headless) |
+| POST | `/auth/refresh` | Refresh/rotate access token |
 | POST | `/auth/logout` | Revoke current token |
 | POST | `/auth/logout-all` | Revoke all tokens |
 | POST | `/auth/forgot-password` | Request reset email |
@@ -533,5 +640,6 @@ revoke_other_tokens(token)
 
 - `modelslab-billing-subscriptions` - Billing, wallet, and subscription management
 - `modelslab-model-discovery` - Search models and check usage analytics
+- `modelslab-training` - Model training and fine-tuning
+- `modelslab-servers` - Deploy dedicated GPU servers
 - `modelslab-image-generation` - Use API keys for image generation
-- `modelslab-webhooks` - Async operation handling

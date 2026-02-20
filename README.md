@@ -49,8 +49,8 @@ npx skills add modelslab/skills --list
 
 | Skill | Description | Use Cases |
 |-------|-------------|-----------|
-| 🔑 [**Account Management**](account-management/SKILL.md)<br/>`modelslab-account-management` | Signup, login, token management, profile updates, API key CRUD, and team management via the Agent Control Plane API. | Agent bootstrapping, API key rotation, team onboarding |
-| 💳 [**Billing & Subscriptions**](billing-subscriptions/SKILL.md)<br/>`modelslab-billing-subscriptions` | Manage billing, wallet balance, payment methods, subscriptions, invoices, and coupons programmatically. | Auto-recharge wallets, subscription lifecycle, invoice retrieval |
+| 🔑 [**Account Management**](account-management/SKILL.md)<br/>`modelslab-account-management` | Signup, login, email verification, token refresh, profile updates, API key CRUD, and team management via the Agent Control Plane API. Supports full headless agent flow. | Agent bootstrapping, headless signup, API key rotation, team onboarding |
+| 💳 [**Billing & Subscriptions**](billing-subscriptions/SKILL.md)<br/>`modelslab-billing-subscriptions` | Manage billing, wallet balance, payment methods, subscriptions, invoices, and coupons programmatically. Includes headless card tokenization and direct subscriptions. | Auto-recharge wallets, headless billing, subscription lifecycle, wallet ledger |
 | 🔍 [**Model Discovery**](model-discovery/SKILL.md)<br/>`modelslab-model-discovery` | Search and discover 50,000+ AI models, check usage analytics, and monitor generation history. | Model selection, usage monitoring, cost tracking |
 
 ### Platform Skills

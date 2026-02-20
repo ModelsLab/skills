@@ -52,6 +52,52 @@ overview = get_billing_overview(token)
 print(f"Wallet balance: ${overview.get('wallet_balance', 0)}")
 ```
 
+## Headless Card Tokenization (Recommended)
+
+Agents create PaymentMethods directly via the Stripe API using the ModelsLab publishable key. Card data goes to Stripe only — ModelsLab never sees raw card numbers.
+
+**ModelsLab Stripe Publishable Key:**
+```
+pk_live_51JfPKxSDo1BGXG2xQS6wNZlCIoNBJFBINvJXrzKFYHiJW6wOfInnLRKuKSbPcJj7QEBd9bVzLXIiXW6TW2nT0FJF006u7qX9kH
+```
+
+This key is safe to embed in agent code — publishable keys can only create tokens, never charge directly.
+
+```python
+import requests
+
+STRIPE_PK = "pk_live_51JfPKxSDo1BGXG2xQS6wNZlCIoNBJFBINvJXrzKFYHiJW6wOfInnLRKuKSbPcJj7QEBd9bVzLXIiXW6TW2nT0FJF006u7qX9kH"
+
+def create_payment_method(card_number, exp_month, exp_year, cvc):
+    """Create a Stripe PaymentMethod directly — card data never touches ModelsLab.
+
+    Args:
+        card_number: Card number (e.g., "4242424242424242")
+        exp_month: Expiry month (e.g., 12)
+        exp_year: Expiry year (e.g., 2027)
+        cvc: CVC code (e.g., "123")
+
+    Returns:
+        Stripe PaymentMethod ID (pm_...) for use with ModelsLab endpoints.
+    """
+    resp = requests.post(
+        "https://api.stripe.com/v1/payment_methods",
+        auth=(STRIPE_PK, ""),
+        data={
+            "type": "card",
+            "card[number]": card_number,
+            "card[exp_month]": exp_month,
+            "card[exp_year]": exp_year,
+            "card[cvc]": cvc,
+        }
+    )
+    return resp.json()["id"]  # e.g., "pm_1Xyz..."
+
+# Usage — complete headless payment flow:
+pm_id = create_payment_method("4242424242424242", 12, 2027, "123")
+fund_wallet(token, 25, payment_method_id=pm_id)  # or create_subscription(...)
+```
+
 ## Payment Methods
 
 ### List Payment Methods
@@ -166,29 +212,88 @@ def get_invoice_pdf(token, invoice_id):
 
 ## Wallet
 
+### Wallet Balance
+
+```python
+def get_wallet_balance(token):
+    """Quick wallet balance check."""
+    resp = requests.get(f"{BASE}/wallet/balance", headers=headers(token))
+    return resp.json()["data"]
+
+# Usage
+balance = get_wallet_balance(token)
+print(f"Balance: ${balance['balance']} {balance['currency']}")
+```
+
+### Wallet Transactions
+
+```python
+def get_wallet_transactions(token, type=None, limit=50, offset=0):
+    """Get wallet transaction ledger (deposits, charges, refunds).
+
+    Args:
+        type: Filter by "credit" or "debit" (optional)
+        limit: Max items 1-200 (default 50)
+        offset: Pagination offset (default 0)
+    """
+    params = {"limit": limit, "offset": offset}
+    if type: params["type"] = type
+
+    resp = requests.get(
+        f"{BASE}/wallet/transactions",
+        headers=headers(token),
+        params=params
+    )
+    return resp.json()["data"]
+
+# Usage
+txns = get_wallet_transactions(token, type="debit", limit=20)
+for txn in txns["items"]:
+    print(f"{txn['created_at']}: {txn['type']} ${txn['amount']} — {txn['usecase']}")
+print(f"Wallet balance: ${txns['wallet']['balance']}")
+```
+
 ### Fund Wallet
 
 ```python
-def fund_wallet(token, amount, payment_method_id=None):
+def fund_wallet(token, amount, payment_method_id=None, idempotency_key=None):
     """Add funds to wallet.
 
     Args:
-        amount: Amount in USD
-        payment_method_id: Stripe PM ID (optional, uses default)
+        amount: Amount in USD (min $10)
+        payment_method_id: Stripe PM ID from create_payment_method() (recommended)
+        idempotency_key: Prevent duplicate charges on retries (optional)
     """
     payload = {"amount": amount}
     if payment_method_id:
         payload["payment_method_id"] = payment_method_id
 
-    resp = requests.post(
-        f"{BASE}/wallet/fund",
-        headers=headers(token),
-        json=payload
+    h = headers(token)
+    if idempotency_key:
+        h["Idempotency-Key"] = idempotency_key
+
+    resp = requests.post(f"{BASE}/wallet/fund", headers=h, json=payload)
+    return resp.json()["data"]
+
+# Usage — headless payment flow
+pm_id = create_payment_method("4242424242424242", 12, 2027, "123")
+fund_wallet(token, 50, payment_method_id=pm_id, idempotency_key="fund-50-20260220")
+```
+
+### Check Payment Status
+
+```python
+def get_payment_status(token, payment_intent_id):
+    """Check the status of a Stripe PaymentIntent."""
+    resp = requests.get(
+        f"{BASE}/payments/{payment_intent_id}/status",
+        headers=headers(token)
     )
     return resp.json()["data"]
 
 # Usage
-fund_wallet(token, 50)  # Add $50 using default payment method
+status = get_payment_status(token, "pi_xxx")
+print(f"Payment status: {status['status']}")
 ```
 
 ### Auto-Recharge
@@ -236,15 +341,15 @@ def withdraw(token, amount):
 
 ```python
 def validate_coupon(token, coupon_code, purchase_amount=None):
-    """Validate a coupon code before redeeming."""
-    payload = {"coupon_code": coupon_code}
+    """Validate a coupon code before redeeming (GET request)."""
+    params = {"coupon_code": coupon_code}
     if purchase_amount:
-        payload["purchase_amount"] = purchase_amount
+        params["purchase_amount"] = purchase_amount
 
-    resp = requests.post(
+    resp = requests.get(
         f"{BASE}/wallet/coupons/validate",
         headers=headers(token),
-        json=payload
+        params=params
     )
     return resp.json()["data"]
 
@@ -271,6 +376,36 @@ if not info.get("error"):
 
 ## Subscriptions
 
+### Discover Available Plans
+
+Before creating a subscription, discover available plans and pay-as-you-go options:
+
+```python
+def list_plans(token):
+    """List all available subscription plans and pay-as-you-go options.
+
+    Returns:
+        subscription_plans: Array of plans with id, name, price, features
+        pay_as_you_go: Info about wallet-based billing (min $10 topup, auto-payments)
+    """
+    resp = requests.get(f"{BASE}/subscriptions/plans", headers=headers(token))
+    return resp.json()["data"]
+
+# Usage
+plans_data = list_plans(token)
+
+# Show subscription plans
+for plan in plans_data["subscription_plans"]:
+    print(f"{plan['name']} - ${plan['price']}/{plan['period']} (ID: {plan['id']})")
+    print(f"  Features: {', '.join(plan['features'])}")
+
+# Show pay-as-you-go option
+payg = plans_data["pay_as_you_go"]
+if payg["available"]:
+    print(f"\nPay-as-you-go: min ${payg['minimum_topup_usd']} topup")
+    print(f"Auto-payments: {payg['auto_payments']['supported']}")
+```
+
 ### List Subscriptions
 
 ```python
@@ -286,8 +421,10 @@ def list_subscriptions(token):
 def create_subscription(token, plan_id, success_url=None, cancel_url=None):
     """Start a new subscription. Returns a Stripe checkout URL.
 
+    Use list_plans() first to discover valid plan IDs.
+
     Args:
-        plan_id: The plan ID to subscribe to
+        plan_id: The plan ID from list_plans() response
         success_url: Redirect after successful checkout
         cancel_url: Redirect if checkout is cancelled
     """
@@ -299,6 +436,63 @@ def create_subscription(token, plan_id, success_url=None, cancel_url=None):
         f"{BASE}/subscriptions",
         headers=headers(token),
         json=payload
+    )
+    return resp.json()["data"]
+
+# Usage — discover plans, then subscribe
+plans = list_plans(token)
+chosen_plan = plans["subscription_plans"][0]  # Pick a plan
+result = create_subscription(token, chosen_plan["id"])
+print(f"Checkout URL: {result['checkout_url']}")
+```
+
+### Create Subscription (Headless — Recommended)
+
+Subscribe headlessly with a `payment_method_id` from the Stripe API. No Checkout redirect needed.
+
+```python
+def create_subscription_headless(token, plan_id, payment_method_id, idempotency_key=None):
+    """Create a subscription headlessly with a Stripe PaymentMethod.
+
+    No browser redirect — fully headless.
+    Use list_plans() first to discover valid plan IDs.
+    Use create_payment_method() to get a pm_id from Stripe.
+
+    Args:
+        plan_id: The plan ID from list_plans() response
+        payment_method_id: Stripe PM ID from create_payment_method()
+        idempotency_key: Prevent duplicate subscriptions on retries (optional)
+    """
+    h = headers(token)
+    if idempotency_key:
+        h["Idempotency-Key"] = idempotency_key
+
+    resp = requests.post(
+        f"{BASE}/subscriptions",
+        headers=h,
+        json={
+            "plan_id": plan_id,
+            "payment_method_id": payment_method_id
+        }
+    )
+    return resp.json()["data"]
+
+# Usage — full headless flow
+pm_id = create_payment_method("4242424242424242", 12, 2027, "123")
+plans = list_plans(token)
+chosen_plan = plans["subscription_plans"][0]
+result = create_subscription_headless(token, chosen_plan["id"], pm_id)
+print(f"Status: {result['status']}")
+```
+
+### Check Subscription Status
+
+```python
+def get_subscription_status(token, subscription_id):
+    """Check the current status of a subscription."""
+    resp = requests.get(
+        f"{BASE}/subscriptions/{subscription_id}/status",
+        headers=headers(token)
     )
     return resp.json()["data"]
 ```
@@ -401,7 +595,7 @@ ensure_account_funded(token, min_balance=5, top_up_amount=25)
 
 These same capabilities are available via the Agent Control Plane MCP server:
 - **URL**: `https://modelslab.com/mcp/agents`
-- **Tools**: `agent-billing`, `agent-wallet`, `agent-subscriptions`
+- **Tools**: `agent-billing`, `agent-wallet`, `agent-subscriptions` (use `list-plans` action to discover plans)
 
 See: https://docs.modelslab.com/mcp-web-api/agent-control-plane
 
@@ -419,14 +613,21 @@ See: https://docs.modelslab.com/mcp-web-api/agent-control-plane
 | GET | `/billing/invoices` | List invoices |
 | GET | `/billing/invoices/{id}` | Invoice details |
 | GET | `/billing/invoices/{id}/pdf` | Invoice PDF URL |
-| POST | `/wallet/fund` | Fund wallet |
+| GET | `/wallet/balance` | Quick wallet balance check |
+| GET | `/wallet/transactions` | Wallet transaction ledger |
+| POST | `/wallet/fund` | Fund wallet (with payment_method_id) |
+| POST | `/wallet/confirm-checkout` | Confirm Checkout wallet funding |
 | PUT | `/wallet/auto-funding` | Enable auto-recharge |
 | DELETE | `/wallet/auto-funding` | Disable auto-recharge |
 | POST | `/wallet/withdraw` | Withdraw balance |
-| POST | `/wallet/coupons/validate` | Validate coupon |
+| GET | `/wallet/coupons/validate` | Validate coupon |
 | POST | `/wallet/coupons/redeem` | Redeem coupon |
-| GET | `/subscriptions` | List subscriptions |
-| POST | `/subscriptions` | Create subscription |
+| GET | `/payments/{id}/status` | Check payment intent status |
+| GET | `/subscriptions/plans` | List available plans + pay-as-you-go |
+| GET | `/subscriptions` | List subscriptions (addon, enterprise, normal) |
+| POST | `/subscriptions` | Create subscription (headless with pm_id, or Checkout) |
+| POST | `/subscriptions/confirm-checkout` | Confirm Checkout subscription |
+| GET | `/subscriptions/{id}/status` | Check subscription status |
 | PUT | `/subscriptions/{id}` | Update subscription |
 | POST | `/subscriptions/{id}/cancel` | Cancel |
 | POST | `/subscriptions/{id}/pause` | Pause |
@@ -438,23 +639,46 @@ See: https://docs.modelslab.com/mcp-web-api/agent-control-plane
 
 ## Best Practices
 
-### 1. Set Up Auto-Recharge
+### 1. Use Headless Payment Flow
+```python
+# Always tokenize cards via Stripe, then pass pm_id to ModelsLab
+pm_id = create_payment_method("4242424242424242", 12, 2027, "123")
+fund_wallet(token, 50, payment_method_id=pm_id)
+```
+
+### 2. Use Idempotency Keys for Billing
+```python
+# Prevent duplicate charges on retries
+fund_wallet(token, 50, payment_method_id=pm_id, idempotency_key="fund-50-unique-key")
+```
+
+### 3. Set Up Auto-Recharge
 ```python
 # Avoid running out of credits during generation
 enable_auto_funding(token, auto_charge_amount=25, charge_threshold=5)
 ```
 
-### 2. Check Balance Before Large Jobs
+### 4. Check Balance Before Large Jobs
 ```python
-overview = get_billing_overview(token)
-if overview["wallet_balance"] < estimated_cost:
+balance = get_wallet_balance(token)
+if balance["balance"] < estimated_cost:
     fund_wallet(token, estimated_cost * 1.2)  # 20% buffer
 ```
 
-### 3. Validate Coupons Before Redeeming
+### 5. Validate Coupons Before Redeeming
 ```python
 info = validate_coupon(token, code)
 # Check discount amount, expiry, etc. before committing
+```
+
+### 6. Handle Card Failures Gracefully
+```python
+result = fund_wallet(token, 50, payment_method_id=pm_id)
+# Check for errors
+if result.get("error"):
+    if result["error"]["code"] == "payment_declined":
+        print(f"Card declined: {result['error']['details']['decline_code']}")
+    # Try a different card or ask user
 ```
 
 ## Resources
@@ -468,4 +692,4 @@ info = validate_coupon(token, code)
 
 - `modelslab-account-management` - Account setup and API keys
 - `modelslab-model-discovery` - Check usage and find models
-- `modelslab-webhooks` - Async operation handling
+- `modelslab-webhooks` - Per-request webhook URLs for async results

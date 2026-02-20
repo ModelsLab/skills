@@ -626,4 +626,4 @@ const client = new Client(apiKey);
 ## Related Skills
 
 - All ModelsLab skills - SDKs available for all APIs
-- `modelslab-webhooks` - SDKs support webhook integration
+- `modelslab-webhooks` - Per-request webhook URLs for async results
