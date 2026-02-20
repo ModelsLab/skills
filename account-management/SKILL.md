@@ -505,12 +505,17 @@ agent.check_ready()
 
 ## Headless Agent Flow (No Browser Required)
 
-The complete flow for agents that need to sign up, verify, add payment, subscribe, and generate content without any browser interaction:
+The complete flow for agents that need to sign up, verify, add payment, subscribe, and generate content without any browser interaction. See `modelslab-billing-subscriptions` for all three payment paths (headless, setup intent, human-assisted).
 
 ```python
 import requests
 
 BASE = "https://modelslab.com/api/agents/v1"
+
+# Fetch Stripe publishable key dynamically
+config_resp = requests.get(f"{BASE}/billing/stripe-config",
+    headers={"Authorization": f"Bearer {token}"})
+STRIPE_PK = config_resp.json()["publishable_key"]
 
 # 1. Sign up
 signup_resp = requests.post(f"{BASE}/auth/signup", json={
@@ -526,23 +531,43 @@ verify_resp = requests.post(f"{BASE}/auth/verify-email", json={
 })
 token = verify_resp.json()["data"]["access_token"]
 api_key = verify_resp.json()["data"]["api_key"]
-headers = {"Authorization": f"Bearer {token}"}
+hdrs = {"Authorization": f"Bearer {token}"}
 
-# 3. Create Stripe SetupIntent for headless card tokenization
-setup_resp = requests.post(f"{BASE}/billing/setup-intent", headers=headers)
-client_secret = setup_resp.json()["data"]["client_secret"]
-# -> Confirm with Stripe API directly (no Stripe Checkout redirect)
+# 3a. Option A: Headless card tokenization via Stripe API (recommended)
+# Or fetch key dynamically: GET /billing/stripe-config
+pm_resp = requests.post(
+    "https://api.stripe.com/v1/payment_methods",
+    auth=(STRIPE_PK, ""),
+    data={
+        "type": "card",
+        "card[number]": "4242424242424242",
+        "card[exp_month]": 12,
+        "card[exp_year]": 2027,
+        "card[cvc]": "123",
+    }
+)
+pm_id = pm_resp.json()["id"]
+
+# 3b. Option B: Setup Intent flow (save card for future use)
+# setup_resp = requests.post(f"{BASE}/billing/setup-intent", headers=hdrs)
+# -> Confirm with Stripe API, then use the resulting pm_id
+
+# 3c. Option C: Human-assisted payment link
+# link = requests.post(f"{BASE}/billing/payment-link", headers=hdrs, json={
+#     "purpose": "subscribe", "plan_id": 123
+# }).json()["data"]
+# -> Forward link["payment_url"] to human, then confirm-checkout
 
 # 4. Attach the payment method
-requests.post(f"{BASE}/billing/payment-methods", headers=headers, json={
-    "payment_method_id": "pm_...",
+requests.post(f"{BASE}/billing/payment-methods", headers=hdrs, json={
+    "payment_method_id": pm_id,
     "make_default": True
 })
 
-# 5. Subscribe directly (no Stripe Checkout redirect)
-sub_resp = requests.post(f"{BASE}/subscriptions/direct", headers=headers, json={
+# 5. Subscribe headlessly with payment_method_id (no Checkout redirect)
+sub_resp = requests.post(f"{BASE}/subscriptions", headers=hdrs, json={
     "plan_id": 123,
-    "payment_method_id": "pm_..."
+    "payment_method_id": pm_id
 })
 
 # 6. Generate content using existing APIs with the api_key from step 2

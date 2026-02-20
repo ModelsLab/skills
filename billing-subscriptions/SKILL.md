@@ -12,8 +12,10 @@ Manage billing, wallet funding, payment methods, subscriptions, and coupons via 
 - Check wallet balance and fund it
 - Set up auto-recharge for wallets
 - Manage payment methods (add, set default, remove)
+- Create payment links for human-assisted checkout
+- Confirm Stripe Checkout sessions (wallet funding or subscriptions)
 - View and download invoices
-- Create, upgrade, cancel, or pause subscriptions
+- Create, upgrade, pause, or resume subscriptions
 - Validate and redeem coupons
 - Update billing information (address, tax ID)
 
@@ -52,21 +54,53 @@ overview = get_billing_overview(token)
 print(f"Wallet balance: ${overview.get('wallet_balance', 0)}")
 ```
 
+## Three Payment Paths
+
+ModelsLab supports three ways for agents to handle payments:
+
+| Path | Best For | Flow |
+|------|----------|------|
+| **Headless** | Autonomous agents with card data | `GET /billing/stripe-config` -> tokenize via Stripe API -> pass `payment_method_id` to fund/subscribe |
+| **Setup Intent** | Save a card for reuse without immediate charge | `POST /billing/setup-intent` -> confirm with Stripe -> reuse `payment_method_id` for future fund/subscribe |
+| **Human-Assisted** | Agents that cannot handle card data directly | `POST /billing/payment-link` -> forward URL to human -> human pays on Stripe Checkout -> poll `confirm-checkout` |
+
+## Stripe Config
+
+Fetch the Stripe publishable key dynamically instead of hardcoding it. Useful for agents that need to tokenize cards client-side.
+
+```python
+def get_stripe_config(token):
+    """Get the Stripe publishable key for client-side card tokenization.
+
+    Returns:
+        publishable_key: Stripe publishable key (pk_...)
+        instructions: Usage guidance from the API
+    """
+    resp = requests.get(f"{BASE}/billing/stripe-config", headers=headers(token))
+    return resp.json()["data"]
+
+# Usage
+config = get_stripe_config(token)
+stripe_pk = config["publishable_key"]  # e.g., "pk_live_..."
+```
+
+> **Tip:** The publishable key is safe to embed in agent code — it can only create tokens, never charge directly. You can either fetch it dynamically via this endpoint or use the hardcoded key below.
+
 ## Headless Card Tokenization (Recommended)
 
 Agents create PaymentMethods directly via the Stripe API using the ModelsLab publishable key. Card data goes to Stripe only — ModelsLab never sees raw card numbers.
 
-**ModelsLab Stripe Publishable Key:**
-```
-pk_live_51JfPKxSDo1BGXG2xQS6wNZlCIoNBJFBINvJXrzKFYHiJW6wOfInnLRKuKSbPcJj7QEBd9bVzLXIiXW6TW2nT0FJF006u7qX9kH
-```
-
-This key is safe to embed in agent code — publishable keys can only create tokens, never charge directly.
+Fetch the Stripe publishable key dynamically via `GET /billing/stripe-config`. This ensures your agent always uses the current key without redeploying when it rotates.
 
 ```python
 import requests
 
-STRIPE_PK = "pk_live_51JfPKxSDo1BGXG2xQS6wNZlCIoNBJFBINvJXrzKFYHiJW6wOfInnLRKuKSbPcJj7QEBd9bVzLXIiXW6TW2nT0FJF006u7qX9kH"
+# Fetch publishable key from API
+config_resp = requests.get(
+    f"{BASE}/billing/stripe-config",
+    headers={"Authorization": f"Bearer {TOKEN}"}
+)
+STRIPE_PK = config_resp.json()["publishable_key"]
 
 def create_payment_method(card_number, exp_month, exp_year, cvc):
     """Create a Stripe PaymentMethod directly — card data never touches ModelsLab.
@@ -96,6 +130,147 @@ def create_payment_method(card_number, exp_month, exp_year, cvc):
 # Usage — complete headless payment flow:
 pm_id = create_payment_method("4242424242424242", 12, 2027, "123")
 fund_wallet(token, 25, payment_method_id=pm_id)  # or create_subscription(...)
+```
+
+## Setup Intent Flow
+
+Use a SetupIntent to save a card for future use without an immediate charge. The confirmed PaymentMethod can then be reused for wallet funding or subscriptions.
+
+```python
+def create_setup_intent(token):
+    """Create a Stripe SetupIntent to save a card for future use.
+
+    Returns:
+        client_secret: Use with Stripe.js or Stripe API to confirm the SetupIntent
+        setup_intent_id: The SetupIntent ID (seti_...)
+    """
+    resp = requests.post(f"{BASE}/billing/setup-intent", headers=headers(token))
+    return resp.json()["data"]
+
+# Usage — save a card for reuse
+setup = create_setup_intent(token)
+client_secret = setup["client_secret"]
+
+# Confirm the SetupIntent via Stripe API with card details
+stripe_pk = get_stripe_config(token)["publishable_key"]
+confirm_resp = requests.post(
+    f"https://api.stripe.com/v1/setup_intents/{setup['setup_intent_id']}/confirm",
+    auth=(stripe_pk, ""),
+    data={
+        "payment_method_data[type]": "card",
+        "payment_method_data[card][number]": "4242424242424242",
+        "payment_method_data[card][exp_month]": 12,
+        "payment_method_data[card][exp_year]": 2027,
+        "payment_method_data[card][cvc]": "123",
+    }
+)
+pm_id = confirm_resp.json()["payment_method"]  # e.g., "pm_..."
+
+# Now attach and reuse the payment method
+add_payment_method(token, pm_id, make_default=True)
+fund_wallet(token, 50, payment_method_id=pm_id)
+```
+
+## Human-Assisted Payment (Payment Links)
+
+For agents that cannot handle card data directly (e.g., chatbots, voice assistants), create a Stripe-hosted payment URL and forward it to a human user. ModelsLab controls the `success_url` — agents cannot override it.
+
+```python
+def create_payment_link(token, purpose, amount=None, plan_id=None):
+    """Create a Stripe-hosted payment URL for a human to complete.
+
+    Args:
+        purpose: "fund" for wallet funding, "subscribe" for subscription
+        amount: Required if purpose is "fund" — amount in USD (min $10)
+        plan_id: Required if purpose is "subscribe" — plan ID from list_plans()
+
+    Returns:
+        payment_url: Stripe Checkout URL to forward to the human
+        session_id: Checkout session ID (cs_...) for confirming later
+        purpose: Echoed back
+        amount: Echoed back (for fund)
+        expires_at: When the payment link expires
+        instructions: Guidance for the agent
+
+    Note:
+        success_url is NOT accepted — ModelsLab controls redirects.
+        After payment, the human sees ModelsLab's success page with the session_id
+        to copy back to the agent.
+    """
+    payload = {"purpose": purpose}
+    if amount is not None:
+        payload["amount"] = amount
+    if plan_id is not None:
+        payload["plan_id"] = plan_id
+
+    resp = requests.post(
+        f"{BASE}/billing/payment-link",
+        headers=headers(token),
+        json=payload
+    )
+    return resp.json()["data"]
+
+# Usage — wallet funding via human
+link = create_payment_link(token, purpose="fund", amount=50)
+print(f"Please complete payment at: {link['payment_url']}")
+print(f"Session ID: {link['session_id']} (expires {link['expires_at']})")
+
+# Usage — subscription via human
+plans = list_plans(token)
+chosen_plan = plans["subscription_plans"][0]
+link = create_payment_link(token, purpose="subscribe", plan_id=chosen_plan["id"])
+print(f"Please subscribe at: {link['payment_url']}")
+```
+
+### Confirming Checkout Sessions
+
+After the human completes payment on the Stripe Checkout page, confirm the session to finalize the transaction. Use the `session_id` from `create_payment_link()` or from the human after they see the success page.
+
+```python
+def confirm_wallet_checkout(token, session_id):
+    """Confirm a Stripe Checkout session for wallet funding.
+
+    Call this after the human completes payment on the Stripe Checkout page.
+
+    Args:
+        session_id: The Checkout session ID (cs_...) from create_payment_link()
+    """
+    resp = requests.post(
+        f"{BASE}/wallet/confirm-checkout",
+        headers=headers(token),
+        json={"session_id": session_id}
+    )
+    return resp.json()["data"]
+
+def confirm_subscription_checkout(token, session_id):
+    """Confirm a Stripe Checkout session for subscription.
+
+    Call this after the human completes payment on the Stripe Checkout page.
+
+    Args:
+        session_id: The Checkout session ID (cs_...) from create_payment_link()
+    """
+    resp = requests.post(
+        f"{BASE}/subscriptions/confirm-checkout",
+        headers=headers(token),
+        json={"session_id": session_id}
+    )
+    return resp.json()["data"]
+
+# Usage — complete human-assisted wallet funding flow
+link = create_payment_link(token, purpose="fund", amount=50)
+print(f"Pay here: {link['payment_url']}")
+# ... human pays ...
+session_id = link["session_id"]  # or human copies it from success page
+result = confirm_wallet_checkout(token, session_id)
+print(f"Wallet funded! New balance: ${result.get('balance')}")
+
+# Usage — complete human-assisted subscription flow
+link = create_payment_link(token, purpose="subscribe", plan_id=42)
+print(f"Subscribe here: {link['payment_url']}")
+# ... human pays ...
+result = confirm_subscription_checkout(token, link["session_id"])
+print(f"Subscription active! Status: {result.get('status')}")
 ```
 
 ## Payment Methods
@@ -418,7 +593,7 @@ def list_subscriptions(token):
 ### Create Subscription
 
 ```python
-def create_subscription(token, plan_id, success_url=None, cancel_url=None):
+def create_subscription(token, plan_id, success_url=None):
     """Start a new subscription. Returns a Stripe checkout URL.
 
     Use list_plans() first to discover valid plan IDs.
@@ -426,11 +601,9 @@ def create_subscription(token, plan_id, success_url=None, cancel_url=None):
     Args:
         plan_id: The plan ID from list_plans() response
         success_url: Redirect after successful checkout
-        cancel_url: Redirect if checkout is cancelled
     """
     payload = {"plan_id": plan_id}
     if success_url: payload["success_url"] = success_url
-    if cancel_url: payload["cancel_url"] = cancel_url
 
     resp = requests.post(
         f"{BASE}/subscriptions",
@@ -510,17 +683,9 @@ def update_subscription(token, subscription_id, new_plan_id):
     return resp.json()["data"]
 ```
 
-### Cancel, Pause, Resume
+### Pause & Resume
 
 ```python
-def cancel_subscription(token, subscription_id):
-    """Cancel a subscription."""
-    resp = requests.post(
-        f"{BASE}/subscriptions/{subscription_id}/cancel",
-        headers=headers(token)
-    )
-    return resp.json()["data"]
-
 def pause_subscription(token, subscription_id):
     """Pause a subscription."""
     resp = requests.post(
@@ -557,13 +722,6 @@ def charge_subscription_amount(token, amount):
     )
     return resp.json()["data"]
 
-def reverse_cancelation(token, subscription_id):
-    """Reverse a pending cancellation."""
-    requests.post(
-        f"{BASE}/subscriptions/{subscription_id}/reverse-cancelation",
-        headers=headers(token)
-    )
-
 def fix_payment(token, subscription_id):
     """Fix a failed subscription payment."""
     requests.post(
@@ -591,6 +749,47 @@ def ensure_account_funded(token, min_balance=10, top_up_amount=50):
 ensure_account_funded(token, min_balance=5, top_up_amount=25)
 ```
 
+## Common Workflow: Human-Assisted Funding with Polling
+
+```python
+import time
+
+def fund_via_human(token, amount, poll_interval=5, max_wait=300):
+    """Create a payment link and poll until the human completes it.
+
+    Args:
+        amount: Amount in USD
+        poll_interval: Seconds between balance checks
+        max_wait: Maximum seconds to wait before giving up
+    """
+    # Get initial balance
+    initial = get_wallet_balance(token)["balance"]
+
+    # Create payment link
+    link = create_payment_link(token, purpose="fund", amount=amount)
+    print(f"Please fund your wallet at: {link['payment_url']}")
+    print(f"Waiting for payment (expires {link['expires_at']})...")
+
+    # Poll for confirmation
+    elapsed = 0
+    while elapsed < max_wait:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        try:
+            result = confirm_wallet_checkout(token, link["session_id"])
+            print(f"Payment confirmed! New balance: ${result.get('balance')}")
+            return result
+        except Exception:
+            # Session not yet completed, keep polling
+            pass
+
+    print("Payment not completed within timeout.")
+    return None
+
+# Usage
+fund_via_human(token, amount=50, max_wait=600)
+```
+
 ## MCP Server Access
 
 These same capabilities are available via the Agent Control Plane MCP server:
@@ -604,6 +803,9 @@ See: https://docs.modelslab.com/mcp-web-api/agent-control-plane
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/billing/overview` | Billing overview |
+| GET | `/billing/stripe-config` | Get Stripe publishable key |
+| POST | `/billing/setup-intent` | Create SetupIntent for card saving |
+| POST | `/billing/payment-link` | Create Stripe Checkout payment URL |
 | GET | `/billing/payment-methods` | List payment methods |
 | POST | `/billing/payment-methods` | Add payment method |
 | PUT | `/billing/payment-methods/{id}/default` | Set default |
@@ -629,21 +831,28 @@ See: https://docs.modelslab.com/mcp-web-api/agent-control-plane
 | POST | `/subscriptions/confirm-checkout` | Confirm Checkout subscription |
 | GET | `/subscriptions/{id}/status` | Check subscription status |
 | PUT | `/subscriptions/{id}` | Update subscription |
-| POST | `/subscriptions/{id}/cancel` | Cancel |
 | POST | `/subscriptions/{id}/pause` | Pause |
 | POST | `/subscriptions/{id}/resume` | Resume |
 | POST | `/subscriptions/{id}/reset-cycle` | Reset cycle |
 | POST | `/subscriptions/charge-amount` | Charge amount |
-| POST | `/subscriptions/{id}/reverse-cancelation` | Reverse cancel |
 | POST | `/subscriptions/{id}/fix-payment` | Fix payment |
 
 ## Best Practices
 
-### 1. Use Headless Payment Flow
+### 1. Choose the Right Payment Path
 ```python
-# Always tokenize cards via Stripe, then pass pm_id to ModelsLab
+# Headless — agent has card data, fully autonomous
 pm_id = create_payment_method("4242424242424242", 12, 2027, "123")
 fund_wallet(token, 50, payment_method_id=pm_id)
+
+# Setup Intent — save card first, charge later
+setup = create_setup_intent(token)
+# ... confirm with Stripe API ...
+add_payment_method(token, pm_id, make_default=True)
+
+# Human-Assisted — agent cannot handle cards
+link = create_payment_link(token, purpose="fund", amount=50)
+# Forward link['payment_url'] to human, then confirm_wallet_checkout()
 ```
 
 ### 2. Use Idempotency Keys for Billing
