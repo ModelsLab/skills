@@ -33,6 +33,8 @@ npx skills add modelslab/skills --list
 
 ## Available Skills
 
+### Generation Skills
+
 | Skill | Description | Use Cases |
 |-------|-------------|-----------|
 | 🎨 [**Image Generation**](image-generation/SKILL.md)<br/>`modelslab-image-generation` | Generate high-quality AI images from text prompts or transform existing images. Access 10,000+ models including FLUX, Realtime, and Community models. | Product photos, marketing graphics, concept art, social media content |
@@ -42,6 +44,19 @@ npx skills add modelslab/skills --list
 | 🎲 [**3D Generation**](3d-generation/SKILL.md)<br/>`modelslab-3d-generation` | Generate 3D models from text descriptions or convert 2D images to 3D. | Game assets, product prototypes, 3D printing, AR/VR content |
 | 🎭 [**Deepfake & Face Swap**](deepfake/SKILL.md)<br/>`modelslab-deepfake` | High-quality face swapping in images and videos using advanced AI. | Entertainment content, personalized videos, character variations |
 | 🏠 [**Interior Design**](interior-design/SKILL.md)<br/>`modelslab-interior-design` | AI-powered interior design, room decoration, and space transformation. | Virtual staging, renovation planning, real estate, design mockups |
+
+### Agent Control Plane Skills
+
+| Skill | Description | Use Cases |
+|-------|-------------|-----------|
+| 🔑 [**Account Management**](account-management/SKILL.md)<br/>`modelslab-account-management` | Signup, login, token management, profile updates, API key CRUD, and team management via the Agent Control Plane API. | Agent bootstrapping, API key rotation, team onboarding |
+| 💳 [**Billing & Subscriptions**](billing-subscriptions/SKILL.md)<br/>`modelslab-billing-subscriptions` | Manage billing, wallet balance, payment methods, subscriptions, invoices, and coupons programmatically. | Auto-recharge wallets, subscription lifecycle, invoice retrieval |
+| 🔍 [**Model Discovery**](model-discovery/SKILL.md)<br/>`modelslab-model-discovery` | Search and discover 50,000+ AI models, check usage analytics, and monitor generation history. | Model selection, usage monitoring, cost tracking |
+
+### Platform Skills
+
+| Skill | Description | Use Cases |
+|-------|-------------|-----------|
 | 🔔 [**Webhooks**](webhooks/SKILL.md)<br/>`modelslab-webhooks` | Handle async operations efficiently with real-time webhook notifications. | Batch processing, background jobs, scalable applications |
 | 📦 [**SDK Usage**](sdk-usage/SKILL.md)<br/>`modelslab-sdk-usage` | Official SDKs for easier integration with type safety (Python, TypeScript, PHP, Go, Dart). | Type safety, autocomplete, better error handling, cleaner code |
 
@@ -71,6 +86,9 @@ npx skills add modelslab/skills --all -a claude-code -a cursor
 - "Create a video showing a spaceship flying through space"
 - "Convert this text to speech with a professional voice"
 - "Remove the background from this product photo"
+- "Sign up for a ModelsLab account and create an API key"
+- "Search for the best Flux image models on ModelsLab"
+- "Check my ModelsLab wallet balance and fund it if low"
 
 ## Resources
 
