@@ -1,111 +1,120 @@
 ---
 name: modelslab-audio-generation
-description: Generate speech, music, and sound effects using ModelsLab's Audio API. Supports text-to-speech with voice cloning, voice-to-voice conversion, music generation, and speech-to-text transcription.
+description: Generate speech, music, and sound effects using ModelsLab's v7 Voice API. Supports text-to-speech, speech-to-text, speech-to-speech, music generation, sound effects, dubbing, song extension, and song inpainting via ElevenLabs and Inworld models.
 ---
 
 # ModelsLab Audio Generation
 
-Generate high-quality audio including speech, music, voice cloning, and sound effects using AI.
+Generate high-quality audio including speech, music, voice conversion, sound effects, and dubbing using AI.
 
 ## When to Use This Skill
 
 - Convert text to natural-sounding speech (TTS)
-- Clone voices from audio samples
-- Transform voice characteristics (voice-to-voice)
+- Transcribe speech to text
+- Transform voice characteristics (speech-to-speech)
 - Generate music from text prompts
 - Create sound effects
-- Transcribe speech to text
+- Dub audio into different languages
+- Extend or inpaint songs
 - Build voice assistants or audiobooks
-- Create podcast content
 
-## Available APIs
+## Available APIs (v7)
 
-### Text to Speech
-- `POST https://modelslab.com/api/v6/audio/text_to_speech`
-- Convert text to natural speech with various voices
+### Voice Endpoints
+- **Text to Speech**: `POST https://modelslab.com/api/v7/voice/text-to-speech`
+- **Speech to Text**: `POST https://modelslab.com/api/v7/voice/speech-to-text`
+- **Speech to Speech**: `POST https://modelslab.com/api/v7/voice/speech-to-speech`
+- **Music Generation**: `POST https://modelslab.com/api/v7/voice/music-gen`
+- **Sound Generation**: `POST https://modelslab.com/api/v7/voice/sound-generation`
+- **Create Dubbing**: `POST https://modelslab.com/api/v7/voice/create-dubbing`
+- **Song Extender**: `POST https://modelslab.com/api/v7/voice/song-extender`
+- **Song Inpaint**: `POST https://modelslab.com/api/v7/voice/song-inpaint`
+- **Fetch Result**: `POST https://modelslab.com/api/v7/voice/fetch/{id}`
 
-### Voice Cloning (Text to Audio)
-- `POST https://modelslab.com/api/v6/audio/text_to_audio`
-- Clone voices and generate speech
+> **Note**: v6 endpoints (`/api/v6/voice/text_to_speech`, etc.) still work but v7 is the current version. Parameter names have changed in v7 (e.g., `text` is now `prompt`, `audio` is now `init_audio`).
 
-### Voice to Voice
-- `POST https://modelslab.com/api/v6/audio/voice_to_voice`
-- Transform voice characteristics
+## Discovering Audio Models
 
-### Music Generation
-- `POST https://modelslab.com/api/v6/audio/music_gen`
-- Generate music from text descriptions
+```bash
+# Search audio/voice models
+modelslab models search --feature audio_gen
 
-### Sound Effects (SFX)
-- `POST https://modelslab.com/api/v6/audio/sfx_gen`
-- Create sound effects from text
+# Search by provider
+modelslab models search --search "eleven"
 
-### Speech to Text
-- `POST https://modelslab.com/api/v6/audio/speech_to_text`
-- Transcribe audio to text
+# Get model details
+modelslab models detail --id eleven_multilingual_v2
+```
 
-## Text to Speech (Basic)
+## Audio Model IDs
+
+| model_id | Name | Use With |
+|----------|------|----------|
+| `eleven_multilingual_v2` | ElevenLabs Multilingual v2 | text-to-speech |
+| `eleven_english_sts_v2` | ElevenLabs Voice Changer | speech-to-speech |
+| `scribe_v1` | ElevenLabs Scribe | speech-to-text |
+| `eleven_sound_effect` | ElevenLabs Sound Effects | sound-generation |
+| `music_v1` | ElevenLabs Music | music-gen |
+| `inworld-tts-1` | Inworld TTS | text-to-speech |
+
+## Text to Speech
 
 ```python
 import requests
+import time
 
-def text_to_speech(text, api_key, voice="alloy", language="en"):
+def text_to_speech(text, api_key, voice_id="21m00Tcm4TlvDq8ikWAM", model_id="eleven_multilingual_v2"):
     """Convert text to speech.
 
     Args:
         text: The text to convert to speech
         api_key: Your ModelsLab API key
-        voice: Voice ID (alloy, echo, fable, onyx, nova, shimmer, madison, etc.)
-        language: Language code (en, es, fr, de, etc.)
+        voice_id: ElevenLabs voice ID (see Available Voices below)
+        model_id: TTS model to use
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/audio/text_to_speech",
+        "https://modelslab.com/api/v7/voice/text-to-speech",
         json={
             "key": api_key,
-            "text": text,
-            "voice_id": voice,
-            "language": language
+            "prompt": text,             # v7 uses "prompt" not "text"
+            "voice_id": voice_id,
+            "model_id": model_id
         }
     )
 
     data = response.json()
 
     if data["status"] == "success":
-        return data["output"][0]  # Audio file URL
+        return data["output"][0]
+    elif data["status"] == "processing":
+        return poll_audio_result(data["id"], api_key)
     else:
         raise Exception(f"Error: {data.get('message', 'Unknown error')}")
 
 # Usage
 audio_url = text_to_speech(
-    "Hello! Welcome to ModelsLab. This is a sample of our text-to-speech API.",
-    "your_api_key",
-    voice="madison",
-    language="english"
+    "Hello! Welcome to ModelsLab. This is a test of our text-to-speech API.",
+    "your_api_key"
 )
 print(f"Audio URL: {audio_url}")
 ```
 
-## Voice Cloning
+## Speech to Text (Transcription)
 
 ```python
-def clone_voice_and_speak(text, voice_audio_url, api_key, emotion="neutral"):
-    """Clone a voice and generate speech.
+def speech_to_text(audio_url, api_key, model_id="scribe_v1"):
+    """Transcribe speech from audio to text.
 
     Args:
-        text: Text to speak
-        voice_audio_url: URL of audio to clone (4-30 seconds)
-        api_key: Your API key
-        emotion: neutral, happy, sad, angry, dull
+        audio_url: URL of audio file (must be publicly accessible)
+        model_id: STT model to use
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/audio/text_to_audio",
+        "https://modelslab.com/api/v7/voice/speech-to-text",
         json={
             "key": api_key,
-            "prompt": text,
-            "init_audio": voice_audio_url,
-            "language": "english",
-            "emotion": emotion,
-            "base64": False
+            "init_audio": audio_url,    # v7 uses "init_audio" not "audio"
+            "model_id": model_id
         }
     )
 
@@ -114,36 +123,36 @@ def clone_voice_and_speak(text, voice_audio_url, api_key, emotion="neutral"):
     if data["status"] == "success":
         return data["output"][0]
     elif data["status"] == "processing":
-        # Poll for results
         return poll_audio_result(data["id"], api_key)
     else:
         raise Exception(data.get("message"))
 
-# Clone voice and speak
-cloned_audio = clone_voice_and_speak(
-    "This is a test of voice cloning technology.",
-    "https://example.com/voice-sample.mp3",
-    "your_api_key",
-    emotion="happy"
+# Transcribe audio
+result = speech_to_text(
+    "https://example.com/speech.mp3",
+    "your_api_key"
 )
+print(f"Transcription: {result}")
 ```
 
-## Voice to Voice Transformation
+## Speech to Speech (Voice Conversion)
 
 ```python
-def transform_voice(input_audio_url, target_voice_url, api_key):
-    """Transform voice characteristics from one audio to another.
+def speech_to_speech(audio_url, voice_id, api_key, model_id="eleven_english_sts_v2"):
+    """Convert voice characteristics in audio.
 
     Args:
-        input_audio_url: Original audio
-        target_voice_url: Voice to transform into
+        audio_url: URL of the source audio
+        voice_id: Target ElevenLabs voice ID
+        model_id: Voice conversion model
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/audio/voice_to_voice",
+        "https://modelslab.com/api/v7/voice/speech-to-speech",
         json={
             "key": api_key,
-            "init_audio": input_audio_url,
-            "target_audio": target_voice_url
+            "init_audio": audio_url,
+            "voice_id": voice_id,
+            "model_id": model_id
         }
     )
 
@@ -152,58 +161,24 @@ def transform_voice(input_audio_url, target_voice_url, api_key):
         return data["output"][0]
     elif data["status"] == "processing":
         return poll_audio_result(data["id"], api_key)
-```
-
-## Music Generation
-
-```python
-def generate_music(prompt, api_key, duration=10):
-    """Generate music from a text description.
-
-    Args:
-        prompt: Description of music style/mood
-        duration: Length in seconds (5-30)
-    """
-    response = requests.post(
-        "https://modelslab.com/api/v6/audio/music_gen",
-        json={
-            "key": api_key,
-            "prompt": prompt,
-            "duration": duration
-        }
-    )
-
-    data = response.json()
-    if data["status"] == "success":
-        return data["output"][0]
-    elif data["status"] == "processing":
-        return poll_audio_result(data["id"], api_key)
-
-# Generate background music
-music_url = generate_music(
-    "Upbeat electronic music with a driving beat, perfect for a tech startup video",
-    "your_api_key",
-    duration=15
-)
-print(f"Music: {music_url}")
 ```
 
 ## Sound Effects Generation
 
 ```python
-def generate_sound_effect(description, api_key, duration=5):
-    """Generate a sound effect from description.
+def generate_sound_effect(description, api_key, model_id="eleven_sound_effect"):
+    """Generate a sound effect from a text description.
 
     Args:
         description: What sound to generate
-        duration: Length in seconds
+        model_id: Sound effects model
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/audio/sfx_gen",
+        "https://modelslab.com/api/v7/voice/sound-generation",
         json={
             "key": api_key,
             "prompt": description,
-            "duration": duration
+            "model_id": model_id
         }
     )
 
@@ -216,58 +191,53 @@ def generate_sound_effect(description, api_key, duration=5):
 # Generate door slam sound
 sfx_url = generate_sound_effect(
     "Heavy wooden door slamming shut",
-    "your_api_key",
-    duration=2
+    "your_api_key"
 )
 ```
 
-## Speech to Text (Transcription)
+## Music Generation
 
 ```python
-def transcribe_audio(audio_url, api_key, language="en"):
-    """Transcribe speech from audio to text.
+def generate_music(prompt, api_key, model_id="music_v1"):
+    """Generate music from a text description.
 
     Args:
-        audio_url: URL of audio file
-        language: Language code (en, es, fr, etc.)
+        prompt: Description of music style/mood
+        model_id: Music generation model
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/audio/speech_to_text",
+        "https://modelslab.com/api/v7/voice/music-gen",
         json={
             "key": api_key,
-            "audio": audio_url,
-            "language": language
+            "prompt": prompt,
+            "model_id": model_id
         }
     )
 
     data = response.json()
-
     if data["status"] == "success":
-        return data["text"]  # Transcribed text
-    else:
-        raise Exception(data.get("message"))
+        return data["output"][0]
+    elif data["status"] == "processing":
+        return poll_audio_result(data["id"], api_key)
 
-# Transcribe audio
-text = transcribe_audio(
-    "https://example.com/speech.mp3",
-    "your_api_key",
-    language="en"
+# Generate background music
+music_url = generate_music(
+    "Upbeat electronic music with a driving beat, perfect for a tech startup video",
+    "your_api_key"
 )
-print(f"Transcription: {text}")
+print(f"Music: {music_url}")
 ```
 
 ## Polling for Async Results
 
 ```python
-import time
-
 def poll_audio_result(request_id, api_key, timeout=300):
     """Poll for async audio generation results."""
     start_time = time.time()
 
     while time.time() - start_time < timeout:
         fetch = requests.post(
-            f"https://modelslab.com/api/v6/audio/fetch/{request_id}",
+            f"https://modelslab.com/api/v7/voice/fetch/{request_id}",
             json={"key": api_key}
         )
         result = fetch.json()
@@ -282,150 +252,69 @@ def poll_audio_result(request_id, api_key, timeout=300):
     raise Exception("Timeout waiting for audio generation")
 ```
 
-## Available Voice IDs
+## Available ElevenLabs Voice IDs
 
-### English Voices
-- `alloy` - Neutral, versatile
-- `echo` - Male, clear
-- `fable` - Expressive, storytelling
-- `onyx` - Deep, authoritative
-- `nova` - Energetic, friendly
-- `shimmer` - Soft, gentle
-- `madison` - Professional female
-
-### Custom Voices
-You can also upload and use custom voice samples for cloning.
+| Voice ID | Name | Style |
+|----------|------|-------|
+| `21m00Tcm4TlvDq8ikWAM` | Rachel | Neutral, calm |
+| `AZnzlk1XvdvUeBnXmlld` | Domi | Confident |
+| `EXAVITQu4vr4xnSDxMaL` | Bella | Soft, warm |
+| `ErXwobaYiN019PkySvjV` | Antoni | Well-rounded |
+| `MF3mGyEYCl7XYWbV9V6O` | Elli | Young, clear |
+| `TxGEqnHWrfWFTfGW9XjX` | Josh | Deep, warm |
+| `VR6AewLTigWG4xSOukaG` | Arnold | Strong |
+| `pNInz6obpgDQGcFmaJgB` | Adam | Deep, narrative |
+| `yoZ06aMxZJJ28mfd3POQ` | Sam | Dynamic |
 
 ## Key Parameters
 
-| Parameter | Description | Values |
-|-----------|-------------|--------|
-| `text` / `prompt` | Text content or description | Any text |
-| `voice_id` | Pre-trained voice | alloy, madison, etc. |
-| `init_audio` | Audio to clone (4-30 sec) | Audio URL |
-| `language` | Language of speech | en, es, fr, de, etc. |
-| `emotion` | Emotional tone | neutral, happy, sad, angry, dull |
-| `duration` | Audio length (music/SFX) | 5-30 seconds |
-| `base64` | Return base64 encoded | true / false |
-| `webhook` | Webhook URL for async | URL string |
+### Text to Speech
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prompt` | string | Yes | Text to convert to speech |
+| `voice_id` | string | Yes | ElevenLabs voice identifier |
+| `model_id` | string | Yes | TTS model (e.g., `eleven_multilingual_v2`) |
+| `temperature` | float | No | Voice variation |
+| `webhook` | string | No | Async notification URL |
+
+### Speech to Text
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `init_audio` | string | Yes | URL of audio to transcribe |
+| `model_id` | string | Yes | STT model (e.g., `scribe_v1`) |
+
+### Sound Generation
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prompt` | string | Yes | Sound effect description |
+| `model_id` | string | Yes | SFX model (e.g., `eleven_sound_effect`) |
+
+## v6 to v7 Parameter Changes
+
+| v6 Parameter | v7 Parameter | Notes |
+|-------------|-------------|-------|
+| `text` | `prompt` | TTS text input |
+| `audio` | `init_audio` | STT/STS audio input |
+| `target_audio` | `init_audio` | Voice-to-voice source |
+| (not required) | `model_id` | Now required on all endpoints |
 
 ## Best Practices
 
-### 1. Choose Right Voice
-```python
-# Professional narration
-voice = "onyx"  # Deep, authoritative
+### 1. Use Correct Voice IDs
+TTS requires valid ElevenLabs voice IDs (not generic names like "alloy").
 
-# Friendly assistant
-voice = "nova"  # Energetic, approachable
+### 2. Ensure Audio Accessibility
+Audio URLs for speech-to-text must be publicly accessible without redirects or authentication.
 
-# Storytelling
-voice = "fable"  # Expressive
-```
-
-### 2. Voice Cloning Requirements
-- Audio must be 4-30 seconds long
-- Clear, high-quality recording
-- Single speaker
-- Minimal background noise
-- Consistent volume
-
-### 3. Optimize Music Prompts
-```
-✗ Bad: "music"
-✓ Good: "Upbeat jazz piano with walking bass, 1950s style, energetic"
-
-Include: Genre, instruments, mood, tempo, era
-```
-
-### 4. Use Webhooks for Long Operations
+### 3. Use Webhooks for Long Operations
 ```python
 payload = {
     "key": api_key,
     "prompt": "...",
+    "model_id": "eleven_multilingual_v2",
     "webhook": "https://yourserver.com/webhook/audio",
     "track_id": "audio_001"
 }
-```
-
-### 5. Handle Different Languages
-```python
-# Spanish TTS
-audio = text_to_speech(
-    "Hola, ¿cómo estás?",
-    api_key,
-    voice="alloy",
-    language="es"
-)
-```
-
-## Common Use Cases
-
-### Audiobook Narration
-```python
-chapters = ["Chapter 1 text...", "Chapter 2 text..."]
-audiobook = []
-
-for i, chapter_text in enumerate(chapters):
-    audio = text_to_speech(
-        chapter_text,
-        api_key,
-        voice="fable",
-        language="en"
-    )
-    audiobook.append(audio)
-    print(f"Chapter {i+1} generated: {audio}")
-```
-
-### Podcast Intro Music
-```python
-intro = generate_music(
-    "Energetic podcast intro music, catchy melody, modern production",
-    api_key,
-    duration=10
-)
-```
-
-### Voice Assistant Responses
-```python
-def assistant_speak(message, api_key):
-    """Generate natural assistant voice."""
-    return text_to_speech(
-        message,
-        api_key,
-        voice="nova",
-        language="en"
-    )
-
-response = assistant_speak(
-    "I've completed your request. Is there anything else I can help with?",
-    api_key
-)
-```
-
-### Meeting Transcription
-```python
-def transcribe_meeting(meeting_audio_url, api_key):
-    """Transcribe recorded meeting."""
-    transcript = transcribe_audio(
-        meeting_audio_url,
-        api_key,
-        language="en"
-    )
-    return transcript
-```
-
-### Game Sound Effects
-```python
-sounds = {
-    "footstep": "Footsteps on wooden floor",
-    "explosion": "Large explosion with debris",
-    "sword": "Sword unsheathing, metallic sound"
-}
-
-for name, description in sounds.items():
-    sfx = generate_sound_effect(description, api_key, duration=2)
-    print(f"{name}: {sfx}")
 ```
 
 ## Error Handling
@@ -436,30 +325,18 @@ try:
     print(f"Audio generated: {audio}")
 except Exception as e:
     print(f"Audio generation failed: {e}")
-    # Log error, retry, or use fallback
-```
-
-## Enterprise API
-
-For dedicated resources and better performance:
-
-```python
-# Enterprise endpoints
-url = "https://modelslab.com/api/v1/enterprise/audio/text_to_speech"
-url = "https://modelslab.com/api/v1/enterprise/audio/voice_cloning"
-url = "https://modelslab.com/api/v1/enterprise/audio/speech_to_text"
 ```
 
 ## Resources
 
-- **Audio API Docs**: https://docs.modelslab.com/audio-api/overview
-- **Voice Cloning**: https://docs.modelslab.com/voice-cloning/voice-cloning
-- **TTS Docs**: https://docs.modelslab.com/voice-cloning/text-to-speech
+- **Audio API Docs**: https://docs.modelslab.com/voice-cloning/overview
+- **Model Browser**: https://modelslab.com/models
+- **Model Selection Guide**: https://docs.modelslab.com/guides/model-selection
 - **Get API Key**: https://modelslab.com/dashboard
-- **Voice Library**: Available in dashboard
 
 ## Related Skills
 
+- `modelslab-model-discovery` - Find and filter models
 - `modelslab-video-generation` - Add audio to videos
+- `modelslab-chat-generation` - Chat with LLM models
 - `modelslab-webhooks` - Handle async audio generation
-- `modelslab-sdk-usage` - Use official SDKs

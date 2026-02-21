@@ -1,64 +1,70 @@
 ---
 name: modelslab-video-generation
-description: Generate videos from text prompts or animate static images using ModelsLab's Video API. Supports text2video, img2video with models like CogVideoX.
+description: Generate videos from text prompts or animate static images using ModelsLab's v7 Video Fusion API. Supports text-to-video, image-to-video, video-to-video, lip-sync, and motion control with 40+ models including Seedance, Wan, Veo, Sora, Kling, and Hailuo.
 ---
 
 # ModelsLab Video Generation
 
-Generate AI videos from text descriptions or animate static images using state-of-the-art video generation models.
+Generate AI videos from text descriptions, animate static images, or transform existing videos using state-of-the-art video generation models.
 
 ## When to Use This Skill
 
 - Generate videos from text descriptions
 - Animate static images
+- Transform existing videos (video-to-video)
+- Lip-sync audio to video
+- Apply motion control from reference videos
 - Create short-form content
 - Build video marketing materials
-- Generate animations for prototypes
-- Create visual storytelling content
 
-## Available APIs
+## Available APIs (v7)
 
-### Standard API
-- **Text to Video**: `POST https://modelslab.com/api/v6/video/text2video`
-- **Image to Video**: `POST https://modelslab.com/api/v6/video/img2video`
+### Video Fusion Endpoints
+- **Text to Video**: `POST https://modelslab.com/api/v7/video-fusion/text-to-video`
+- **Image to Video**: `POST https://modelslab.com/api/v7/video-fusion/image-to-video`
+- **Video to Video**: `POST https://modelslab.com/api/v7/video-fusion/video-to-video`
+- **Lip Sync**: `POST https://modelslab.com/api/v7/video-fusion/lip-sync`
+- **Motion Control**: `POST https://modelslab.com/api/v7/video-fusion/motion-control`
+- **Fetch Result**: `POST https://modelslab.com/api/v7/video-fusion/fetch/{id}`
 
-### Ultra API (HD Quality)
-- **Text to Video Ultra**: `POST https://modelslab.com/api/v6/video/text2video_ultra`
-- **Image to Video Ultra**: `POST https://modelslab.com/api/v6/video/img2video_ultra`
+> **Note**: v6 endpoints (`/api/v6/video/text2video`, etc.) still work but v7 is the current version.
 
-### Enterprise API
-- `POST https://modelslab.com/api/v1/enterprise/video/text2video`
-- `POST https://modelslab.com/api/v1/enterprise/video/img2video`
+## Discovering Video Models
 
-## Text to Video Pattern
+```bash
+# Search all video models
+modelslab models search --feature video_fusion
+
+# Search by name
+modelslab models search --search "seedance"
+modelslab models search --search "wan"
+modelslab models search --search "veo"
+
+# Get model details
+modelslab models detail --id seedance-t2v
+```
+
+## Text to Video
 
 ```python
 import requests
 import time
 
-def generate_video(prompt, api_key, num_frames=25):
+def generate_video(prompt, api_key, model_id="seedance-t2v"):
     """Generate a video from a text prompt.
 
     Args:
         prompt: Text description of the video
         api_key: Your ModelsLab API key
-        num_frames: Number of frames (16-25, more = longer video)
+        model_id: Video model to use
     """
-    # Submit the generation request
     response = requests.post(
-        "https://modelslab.com/api/v6/video/text2video",
+        "https://modelslab.com/api/v7/video-fusion/text-to-video",
         json={
             "key": api_key,
-            "model_id": "cogvideox",  # CogVideoX model
+            "model_id": model_id,
             "prompt": prompt,
-            "negative_prompt": "low quality, blurry, static, distorted",
-            "width": 512,
-            "height": 512,
-            "num_frames": num_frames,
-            "num_inference_steps": 20,
-            "guidance_scale": 7,
-            "fps": 8,
-            "output_type": "mp4"
+            "negative_prompt": "low quality, blurry, static, distorted"
         }
     )
 
@@ -83,7 +89,7 @@ def poll_video_result(request_id, api_key, timeout=600):
 
     while time.time() - start_time < timeout:
         fetch = requests.post(
-            f"https://modelslab.com/api/v6/video/fetch/{request_id}",
+            f"https://modelslab.com/api/v7/video-fusion/fetch/{request_id}",
             json={"key": api_key}
         )
         result = fetch.json()
@@ -93,9 +99,8 @@ def poll_video_result(request_id, api_key, timeout=600):
         elif result["status"] == "failed":
             raise Exception(result.get("message", "Generation failed"))
 
-        # Still processing
         print(f"Status: processing... ({int(time.time() - start_time)}s elapsed)")
-        time.sleep(10)  # Check every 10 seconds
+        time.sleep(10)
 
     raise Exception("Timeout waiting for video generation")
 
@@ -103,7 +108,7 @@ def poll_video_result(request_id, api_key, timeout=600):
 video_url = generate_video(
     "A spaceship flying through an asteroid field, cinematic, 4K",
     "your_api_key",
-    num_frames=25
+    model_id="seedance-t2v"
 )
 print(f"Video ready: {video_url}")
 ```
@@ -111,29 +116,22 @@ print(f"Video ready: {video_url}")
 ## Image to Video (Animate Images)
 
 ```python
-def animate_image(image_url, prompt, api_key, num_frames=25):
+def animate_image(image_url, prompt, api_key, model_id="seedance-i2v"):
     """Animate a static image based on a motion prompt.
 
     Args:
         image_url: URL of the image to animate
         prompt: Description of desired motion/animation
-        num_frames: Number of frames
+        model_id: Video model for image-to-video
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/video/img2video",
+        "https://modelslab.com/api/v7/video-fusion/image-to-video",
         json={
             "key": api_key,
-            "model_id": "cogvideox",
-            "init_image": image_url,
+            "model_id": model_id,
+            "init_image": [image_url],  # v7 expects array
             "prompt": prompt,
-            "negative_prompt": "static, still, low quality, blurry",
-            "width": 512,
-            "height": 512,
-            "num_frames": num_frames,
-            "num_inference_steps": 20,
-            "guidance_scale": 7,
-            "fps": 8,
-            "output_type": "mp4"
+            "negative_prompt": "static, still, low quality, blurry"
         }
     )
 
@@ -149,104 +147,128 @@ def animate_image(image_url, prompt, api_key, num_frames=25):
 # Animate a landscape
 video = animate_image(
     "https://example.com/landscape.jpg",
-    "The clouds moving slowly across the sky, birds flying in the distance, gentle breeze",
+    "The clouds moving slowly across the sky, birds flying in the distance",
     "your_api_key",
-    num_frames=25
+    model_id="seedance-i2v"
 )
 print(f"Animated video: {video}")
 ```
 
-## HD Video Generation (Ultra API)
+## Video to Video
 
 ```python
-def generate_hd_video(prompt, api_key):
-    """Generate high-definition video."""
+def transform_video(video_url, prompt, api_key, model_id="wan2.1"):
+    """Transform an existing video with a new style or content.
+
+    Args:
+        video_url: URL of the source video
+        prompt: Description of desired transformation
+    """
     response = requests.post(
-        "https://modelslab.com/api/v6/video/text2video_ultra",
+        "https://modelslab.com/api/v7/video-fusion/video-to-video",
         json={
             "key": api_key,
-            "prompt": prompt,
-            "negative_prompt": "low quality, blurry, distorted",
-            "num_frames": 25,
-            "num_inference_steps": 30,  # More steps for HD
-            "guidance_scale": 7.5
+            "model_id": model_id,
+            "init_video": [video_url],  # v7 expects array
+            "prompt": prompt
         }
     )
 
     data = response.json()
     if data["status"] == "processing":
-        return poll_video_result(data["id"], api_key, timeout=900)  # Longer timeout for HD
+        return poll_video_result(data["id"], api_key)
     elif data["status"] == "success":
         return data["output"][0]
 ```
 
-## Using Webhooks for Async Generation
+## Lip Sync
 
 ```python
-def generate_video_with_webhook(prompt, api_key, webhook_url, track_id):
-    """Generate video and get results via webhook."""
+def lip_sync(video_url, audio_url, api_key, model_id="lipsync-2"):
+    """Sync lip movements to audio.
+
+    Args:
+        video_url: URL of the video with a face
+        audio_url: URL of the audio to sync to
+    """
     response = requests.post(
-        "https://modelslab.com/api/v6/video/text2video",
+        "https://modelslab.com/api/v7/video-fusion/lip-sync",
         json={
             "key": api_key,
-            "model_id": "cogvideox",
-            "prompt": prompt,
-            "negative_prompt": "low quality, blurry",
-            "num_frames": 25,
-            "webhook": webhook_url,  # Your endpoint
-            "track_id": track_id     # Unique identifier
+            "model_id": model_id,
+            "init_video": video_url,
+            "init_audio": audio_url
         }
     )
 
     data = response.json()
-    print(f"Request submitted: {data['id']}")
-    print(f"Will notify: {webhook_url}")
-    return data["id"]
-
-# Usage
-request_id = generate_video_with_webhook(
-    "A sunset over the ocean with waves crashing",
-    "your_api_key",
-    "https://yourserver.com/webhook/video",
-    "video_001"
-)
+    if data["status"] == "processing":
+        return poll_video_result(data["id"], api_key)
+    elif data["status"] == "success":
+        return data["output"][0]
 ```
+
+## Popular Video Model IDs
+
+### Text to Video
+- `seedance-t2v` - Seedance text-to-video (BytePlus)
+- `seedance-1.0-pro-fast-t2v` - Seedance Pro Fast
+- `wan2.6-t2v` - Wan 2.6 text-to-video (Alibaba)
+- `wan2.1` - Wan 2.1 (ModelsLab in-house)
+- `veo2` - Google Veo 2
+- `veo3` - Google Veo 3
+- `sora-2` - OpenAI Sora 2
+- `Hailuo-2.3-t2v` - Hailuo 2.3 (MiniMax)
+- `kling-v2-5-turbo-t2v` - Kling V2.5 Turbo
+
+### Image to Video
+- `seedance-i2v` - Seedance image-to-video
+- `seedance-1.0-pro-i2v` - Seedance Pro
+- `wan2.6-i2v` - Wan 2.6 image-to-video
+- `Hailuo-2.3-i2v` - Hailuo 2.3
+- `kling-v2-1-i2v` - Kling V2.1
+
+### Lip Sync
+- `lipsync-2` - Sync Labs Lipsync 2
+
+### Motion Control
+- `kling-motion-control` - Kling Motion Control
+- `omni-human` - OmniHuman (BytePlus)
+
+Browse all models: https://modelslab.com/models
 
 ## Key Parameters
 
 | Parameter | Description | Recommended Values |
 |-----------|-------------|-------------------|
+| `model_id` | Video generation model (required) | See model tables above |
 | `prompt` | Text description of video content | Be specific about motion and scene |
 | `negative_prompt` | What to avoid | "static, low quality, blurry" |
-| `model_id` | Video generation model | `cogvideox` (default) |
-| `num_frames` | Video length | 16 (short), 25 (standard) |
-| `width` / `height` | Video dimensions | 512x512 (standard) |
-| `num_inference_steps` | Quality vs speed | 20 (fast), 30 (quality) |
-| `guidance_scale` | Prompt adherence | 6-8 |
-| `fps` | Frames per second | 8 (standard), 16 (smooth) |
-| `output_type` | Video format | `mp4` or `gif` |
+| `init_image` | Source image for i2v (array) | `["https://..."]` |
+| `init_video` | Source video for v2v (array) | `["https://..."]` |
+| `init_audio` | Audio for lip-sync/video | URL string |
+| `width` / `height` | Video dimensions (512-1024) | 512, 768, 1024 |
+| `duration` | Video length in seconds | 4-30 |
+| `aspect_ratio` | Aspect ratio | "16:9", "9:16", "1:1" |
+| `webhook` | Async notification URL | URL string |
+| `track_id` | Custom tracking identifier | Any string |
 
 ## Best Practices
 
 ### 1. Write Motion-Focused Prompts
 ```
-✗ Bad: "A cat"
-✓ Good: "A cat walking through a garden, looking around curiously, sunlight filtering through trees"
+Bad: "A cat"
+Good: "A cat walking through a garden, looking around curiously, sunlight filtering through trees"
 
 Include: Action, movement, camera motion, atmosphere
 ```
 
 ### 2. Set Realistic Expectations
-- Videos are 2-4 seconds typically (16-25 frames)
-- Generation takes 3-10 minutes depending on settings
+- Videos are 4-30 seconds typically
+- Generation takes 30 seconds to several minutes depending on model
 - Best for short clips, not full productions
 
-### 3. Use Appropriate API
-- **Standard**: Good quality, reasonable speed
-- **Ultra**: HD quality, takes longer
-- **Enterprise**: Best performance with dedicated resources
-
-### 4. Handle Async Operations
+### 3. Handle Async Operations
 ```python
 # Video generation is ALWAYS async
 # Always implement polling or use webhooks
@@ -254,115 +276,39 @@ if data["status"] == "processing":
     video = poll_video_result(data["id"], api_key)
 ```
 
-### 5. Optimize Parameters for Speed
+### 4. Use Webhooks
 ```python
-# Faster generation
-{
-    "num_frames": 16,         # Fewer frames
-    "num_inference_steps": 15, # Fewer steps
-    "width": 480,             # Smaller size
-    "height": 480
+payload = {
+    "key": api_key,
+    "model_id": "seedance-t2v",
+    "prompt": "...",
+    "webhook": "https://yourserver.com/webhook/video",
+    "track_id": "video_001"
 }
-
-# Better quality (slower)
-{
-    "num_frames": 25,
-    "num_inference_steps": 30,
-    "width": 512,
-    "height": 512
-}
-```
-
-## Common Use Cases
-
-### Product Demonstration
-```python
-video = generate_video(
-    "Product slowly rotating on a pedestal, studio lighting, professional commercial",
-    api_key,
-    num_frames=20
-)
-```
-
-### Social Media Content
-```python
-video = generate_video(
-    "Trendy fashion model walking on runway, camera following, dynamic lighting, stylish",
-    api_key
-)
-```
-
-### Animated Landscapes
-```python
-video = animate_image(
-    "https://example.com/mountain-scene.jpg",
-    "Time lapse of clouds moving over mountains, changing lighting from dawn to dusk",
-    api_key,
-    num_frames=25
-)
-```
-
-### Abstract Animations
-```python
-video = generate_video(
-    "Abstract colorful particles flowing and morphing, smooth motion, vibrant colors, 4K",
-    api_key
-)
 ```
 
 ## Error Handling
 
 ```python
 try:
-    video = generate_video(prompt, api_key)
+    video = generate_video(prompt, api_key, model_id="seedance-t2v")
     print(f"Video generated: {video}")
 except Exception as e:
     print(f"Video generation failed: {e}")
-    # Log error, retry with different parameters, notify user
 ```
-
-## Fetching Existing Requests
-
-```python
-def fetch_video_status(request_id, api_key):
-    """Check status of an existing video generation request."""
-    response = requests.post(
-        f"https://modelslab.com/api/v6/video/fetch/{request_id}",
-        json={"key": api_key}
-    )
-
-    data = response.json()
-    return {
-        "status": data["status"],
-        "output": data.get("output", []),
-        "message": data.get("message", ""),
-        "eta": data.get("eta", None)
-    }
-```
-
-## Performance Tips
-
-1. **Use Webhooks**: Don't poll continuously, use webhooks
-2. **Cache Results**: Store generated videos, reuse when possible
-3. **Queue Requests**: Generate videos in background jobs
-4. **Optimize Prompts**: Test prompts to find what works best
-5. **Monitor Costs**: Video generation uses more credits than images
-
-## Supported Models
-
-- `cogvideox` - CogVideoX model (recommended)
-- More models may be available - check documentation
 
 ## Resources
 
 - **API Documentation**: https://docs.modelslab.com/video-api/overview
-- **Text2Video Docs**: https://docs.modelslab.com/video-api/text-to-video
-- **Image2Video Docs**: https://docs.modelslab.com/video-api/image-to-video
+- **Model Browser**: https://modelslab.com/models
+- **Model Selection Guide**: https://docs.modelslab.com/guides/model-selection
 - **Get API Key**: https://modelslab.com/dashboard
 - **Webhooks Guide**: See `modelslab-webhooks` skill
 
 ## Related Skills
 
+- `modelslab-model-discovery` - Find and filter models
 - `modelslab-image-generation` - Generate images for img2video
+- `modelslab-audio-generation` - Generate audio for lip-sync
+- `modelslab-chat-generation` - Chat with LLM models
 - `modelslab-webhooks` - Handle async operations efficiently
-- `modelslab-sdk-usage` - Use official SDKs for easier integration

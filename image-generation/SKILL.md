@@ -1,6 +1,6 @@
 ---
 name: modelslab-image-generation
-description: Generate high-quality AI images from text prompts or transform existing images using ModelsLab's API with 10,000+ models including FLUX, Realtime, and Community models. Supports text2img, img2img, inpainting, and ControlNet.
+description: Generate high-quality AI images from text prompts or transform existing images using ModelsLab's v7 API with 50,000+ models including FLUX, Realtime, and Community models. Supports text-to-image, image-to-image, inpainting, and ControlNet.
 ---
 
 # ModelsLab Image Generation
@@ -17,26 +17,39 @@ Generate stunning AI images using ModelsLab's extensive library of models and po
 - Need highest quality (Community/FLUX models)
 - Create product images, marketing graphics, or artwork
 
-## Available APIs
+## Available APIs (v7)
 
-### 1. Realtime API (Fastest)
-**Best for**: Speed-critical applications, prototypes, real-time demos
-- Text2Img: `POST https://modelslab.com/api/v6/realtime/text2img`
-- Img2Img: `POST https://modelslab.com/api/v6/realtime/img2img`
-- Response time: < 5 seconds
+### 1. Text to Image
+- `POST https://modelslab.com/api/v7/images/text-to-image`
+- 50,000+ models available
 
-### 2. Community Models (Highest Quality)
-**Best for**: Production outputs, custom models, advanced features
-- Text2Img: `POST https://modelslab.com/api/v6/images/text2img`
-- Img2Img: `POST https://modelslab.com/api/v6/images/img2img`
-- Inpainting: `POST https://modelslab.com/api/v6/images/inpaint`
-- ControlNet: `POST https://modelslab.com/api/v6/images/controlnet`
-- 10,000+ models available
+### 2. Image to Image
+- `POST https://modelslab.com/api/v7/images/image-to-image`
+- Transform existing images with a prompt
 
-### 3. FLUX API (Premium Quality)
-**Best for**: State-of-the-art results
-- Text2Img: `POST https://modelslab.com/api/v6/images/flux`
-- Best-in-class image quality
+### 3. Inpainting
+- `POST https://modelslab.com/api/v7/images/inpaint`
+- Fill masked regions of an image
+
+### 4. Fetch Result
+- `POST https://modelslab.com/api/v7/images/fetch/{id}`
+- Poll for async generation results
+
+> **Note**: v6 endpoints (`/api/v6/images/text2img`, etc.) still work but v7 is the current version.
+
+## Discovering Image Models
+
+```bash
+# Search image models by name
+modelslab models search --feature imagen
+
+# Search specific models
+modelslab models search --search "flux"
+modelslab models search --search "midjourney"
+
+# Get model details
+modelslab models detail --id flux
+```
 
 ## Quick Start: Text to Image
 
@@ -44,47 +57,33 @@ Generate stunning AI images using ModelsLab's extensive library of models and po
 import requests
 import time
 
-def generate_image(prompt, api_key, api_type="community"):
+def generate_image(prompt, api_key, model_id="flux"):
     """Generate an image from text.
 
     Args:
         prompt: Text description of the image
         api_key: Your ModelsLab API key
-        api_type: "realtime" (fast) or "community" (quality)
+        model_id: Model to use (flux, midjourney, sdxl, imagen-3, etc.)
     """
-    if api_type == "realtime":
-        url = "https://modelslab.com/api/v6/realtime/text2img"
-        payload = {
+    response = requests.post(
+        "https://modelslab.com/api/v7/images/text-to-image",
+        json={
             "key": api_key,
-            "prompt": prompt,
-            "negative_prompt": "blurry, low quality",
-            "width": 512,
-            "height": 512,
-            "num_inference_steps": 20,
-            "guidance_scale": 7.5
-        }
-    else:  # community
-        url = "https://modelslab.com/api/v6/images/text2img"
-        payload = {
-            "key": api_key,
-            "model_id": "midjourney",  # or any model
+            "model_id": model_id,
             "prompt": prompt,
             "negative_prompt": "blurry, low quality, distorted",
-            "width": 768,
-            "height": 768,
+            "width": 1024,
+            "height": 1024,
             "samples": 1,
-            "num_inference_steps": 30,
-            "guidance_scale": 7.5,
-            "safety_checker": "yes"
+            "guidance_scale": 7.5
         }
+    )
 
-    response = requests.post(url, json=payload)
     data = response.json()
 
     if data["status"] == "success":
         return data["output"][0]
     elif data["status"] == "processing":
-        # Poll for results (community API may be async)
         return poll_result(data["id"], api_key)
     else:
         raise Exception(f"Error: {data.get('message')}")
@@ -94,7 +93,7 @@ def poll_result(request_id, api_key, timeout=300):
     start = time.time()
     while time.time() - start < timeout:
         resp = requests.post(
-            f"https://modelslab.com/api/v6/images/fetch/{request_id}",
+            f"https://modelslab.com/api/v7/images/fetch/{request_id}",
             json={"key": api_key}
         )
         data = resp.json()
@@ -111,7 +110,7 @@ def poll_result(request_id, api_key, timeout=300):
 image_url = generate_image(
     "A futuristic cityscape at sunset, cyberpunk style, 8k, highly detailed",
     "your_api_key",
-    api_type="community"
+    model_id="flux"
 )
 print(f"Image: {image_url}")
 ```
@@ -119,27 +118,28 @@ print(f"Image: {image_url}")
 ## Image to Image Transformation
 
 ```python
-def transform_image(init_image, prompt, api_key, strength=0.7):
+def transform_image(init_image, prompt, api_key, model_id="flux", strength=0.7):
     """Transform an existing image based on a prompt.
 
     Args:
         init_image: URL of the input image
         prompt: How to transform the image
+        model_id: Model to use (flux models don't need scheduler, SD models do)
         strength: 0.0-1.0, higher = more change
     """
+    payload = {
+        "key": api_key,
+        "model_id": model_id,
+        "prompt": prompt,
+        "init_image": [init_image],  # v7 expects array
+        "strength": strength,
+        "width": 512,
+        "height": 512
+    }
+
     response = requests.post(
-        "https://modelslab.com/api/v6/images/img2img",
-        json={
-            "key": api_key,
-            "model_id": "midjourney",
-            "prompt": prompt,
-            "init_image": init_image,
-            "strength": strength,
-            "width": 512,
-            "height": 512,
-            "num_inference_steps": 30,
-            "guidance_scale": 7.5
-        }
+        "https://modelslab.com/api/v7/images/image-to-image",
+        json=payload
     )
 
     data = response.json()
@@ -153,6 +153,7 @@ result = transform_image(
     "https://example.com/photo.jpg",
     "An oil painting in Van Gogh style",
     "your_api_key",
+    model_id="flux",
     strength=0.8
 )
 ```
@@ -160,26 +161,24 @@ result = transform_image(
 ## Inpainting (Fill Masked Regions)
 
 ```python
-def inpaint_image(image_url, mask_url, prompt, api_key):
+def inpaint_image(image_url, mask_url, prompt, api_key, model_id="flux"):
     """Fill in masked parts of an image.
 
     Args:
         image_url: Original image URL
         mask_url: Mask image URL (white = inpaint, black = keep)
         prompt: What to generate in masked area
+        model_id: Model to use
     """
     response = requests.post(
-        "https://modelslab.com/api/v6/images/inpaint",
+        "https://modelslab.com/api/v7/images/inpaint",
         json={
             "key": api_key,
-            "model_id": "midjourney",
+            "model_id": model_id,
             "init_image": image_url,
             "mask_image": mask_url,
             "prompt": prompt,
-            "negative_prompt": "blurry, low quality",
-            "width": 512,
-            "height": 512,
-            "num_inference_steps": 30
+            "negative_prompt": "blurry, low quality"
         }
     )
 
@@ -194,55 +193,17 @@ result = inpaint_image(
     "https://example.com/room.jpg",
     "https://example.com/mask.jpg",
     "A modern red sofa",
-    "your_api_key"
-)
-```
-
-## ControlNet (Precise Control)
-
-```python
-def generate_with_controlnet(image_url, prompt, controlnet_type, api_key):
-    """Use ControlNet for precise composition control.
-
-    ControlNet Types:
-        - canny: Edge detection
-        - depth: Depth map
-        - pose: Human pose
-        - scribble: Sketch-based
-        - normal: Surface normals
-        - seg: Semantic segmentation
-    """
-    response = requests.post(
-        "https://modelslab.com/api/v6/images/controlnet",
-        json={
-            "key": api_key,
-            "model_id": "midjourney",
-            "controlnet_model": controlnet_type,
-            "controlnet_type": controlnet_type,
-            "init_image": image_url,
-            "prompt": prompt,
-            "width": 512,
-            "height": 512,
-            "num_inference_steps": 30
-        }
-    )
-
-    data = response.json()
-    if data["status"] == "success":
-        return data["output"][0]
-    elif data["status"] == "processing":
-        return poll_result(data["id"], api_key)
-
-# Preserve pose, change style
-result = generate_with_controlnet(
-    "https://example.com/person.jpg",
-    "A superhero in dynamic pose, comic book style",
-    "pose",
-    "your_api_key"
+    "your_api_key",
+    model_id="flux"
 )
 ```
 
 ## Popular Model IDs
+
+### Premium / Fast
+- `flux` - Flux Dev (fast, high-quality, no scheduler needed)
+- `imagen-3` - Google Imagen 3 (photorealistic)
+- `imagen-4` - Google Imagen 4 (latest)
 
 ### Photorealistic
 - `realistic-vision-v13` - High-quality realistic images
@@ -265,22 +226,23 @@ Browse all models: https://modelslab.com/models
 
 | Parameter | Description | Recommended Values |
 |-----------|-------------|-------------------|
+| `model_id` | Model to use (required) | `flux`, `midjourney`, `sdxl`, etc. |
 | `prompt` | Text description of desired image | Be specific and detailed |
 | `negative_prompt` | What to avoid | "blurry, low quality, distorted" |
-| `width` / `height` | Dimensions (divisible by 8) | 512, 768, 1024 |
+| `width` / `height` | Dimensions (512-1024) | 512, 768, 1024 |
 | `samples` | Number of images | 1-4 |
-| `num_inference_steps` | Quality (higher = better) | 20 (fast), 30 (balanced), 50 (quality) |
 | `guidance_scale` | Prompt adherence | 7-8 (balanced), 10-15 (strict) |
 | `seed` | Reproducibility | `null` (random) or number |
 | `strength` | img2img change amount | 0.3 (subtle), 0.7 (moderate), 0.9 (heavy) |
-| `safety_checker` | NSFW filter | "yes" or "no" |
+| `webhook` | Async notification URL | URL string |
+| `track_id` | Custom tracking identifier | Any string |
 
 ## Best Practices
 
 ### 1. Craft Effective Prompts
 ```
-✗ Bad: "a car"
-✓ Good: "A red Ferrari sports car, studio lighting, highly detailed, 4k, photorealistic"
+Bad: "a car"
+Good: "A red Ferrari sports car, studio lighting, highly detailed, 4k, photorealistic"
 
 Include: Subject, style, lighting, quality descriptors
 ```
@@ -290,10 +252,11 @@ Include: Subject, style, lighting, quality descriptors
 negative_prompt = "blurry, low quality, distorted, deformed, ugly, bad anatomy, extra limbs"
 ```
 
-### 3. Choose Right API
-- **Realtime**: Demos, prototypes, speed-critical
-- **Community**: Production, custom styles, quality
-- **FLUX**: When you need absolute best quality
+### 3. Choose Right Model
+- **flux**: Fast, high quality, good default choice
+- **midjourney**: Artistic, stylized outputs
+- **imagen-3/4**: Premium photorealistic (Google)
+- **sdxl**: Versatile base with many fine-tunes
 
 ### 4. Handle Async Operations
 ```python
@@ -312,45 +275,6 @@ payload = {
 }
 ```
 
-## Common Use Cases
-
-### Product Photography
-```python
-image = generate_image(
-    "Professional product photo of wireless headphones, white background, studio lighting, commercial photography",
-    api_key,
-    negative_prompt="shadows, cluttered background, low quality"
-)
-```
-
-### Marketing Graphics
-```python
-image = generate_image(
-    "Modern tech startup office, collaborative workspace, bright and airy, professional photography, 8k",
-    api_key
-)
-```
-
-### Artistic Creations
-```python
-image = generate_image(
-    "A serene Japanese garden at sunset, cherry blossoms, koi pond, peaceful atmosphere, oil painting style",
-    api_key,
-    api_type="community"
-)
-```
-
-### Image Variations (Same Seed)
-```python
-seed = 12345
-for i in range(4):
-    image = generate_image(
-        f"A cozy coffee shop interior, variation {i+1}",
-        api_key,
-        seed=seed
-    )
-```
-
 ## Error Handling
 
 ```python
@@ -366,13 +290,15 @@ except Exception as e:
 
 - **API Documentation**: https://docs.modelslab.com/image-generation/overview
 - **Model Library**: https://modelslab.com/models
+- **Model Selection Guide**: https://docs.modelslab.com/guides/model-selection
 - **Get API Key**: https://modelslab.com/dashboard
 - **Community**: https://discord.gg/modelslab
-- **Support**: support@modelslab.com
 
 ## Related Skills
 
+- `modelslab-model-discovery` - Find and filter models
 - `modelslab-image-editing` - Edit and enhance images
 - `modelslab-video-generation` - Generate videos from images
+- `modelslab-chat-generation` - Chat with LLM models
 - `modelslab-webhooks` - Async operation handling
 - `modelslab-sdk-usage` - Use official SDKs
